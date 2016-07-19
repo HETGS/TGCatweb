@@ -1,5 +1,54 @@
 "use strict";
 const Ang2keV = 12.389419;
+const exposureTime = 1e4;
+
+
+
+function convertBinUnit(){
+
+
+	var newUnit = $('#xunit').val();
+	var currentVal = $('#binSize').html();
+	var currentUnit = $("#bin_units").html();
+
+	var factor = {'Å': 1, 'nm': 10, 'micron': 1e4, 'mm': 1e7, 'cm': 1e8, 'm':1e10};
+
+	var newVal = currentVal * (factor[currentUnit]/factor[newUnit]);
+	newVal = parseFloat(newVal.toPrecision(2));
+	newVal = newVal.toExponential();
+
+	$("#binSize").html(newVal);
+	$("#bin_units").html(newUnit);
+
+	return 0;
+
+};
+
+
+function convertyunit(){
+    var area = 0.001;
+    var binSize = $("#binSize").html(); // THIS WILL BE IN SOME UNIT NOT NECESSARILY ANGSTROMS
+    var unit = $('#yunit').val();
+    var factor = {'counts/X/s' : 1, 'counts/bin':(exposureTime*binSize), 'Fy' : (binSize/area), 'Fy/X' : 1/area};
+    var f = factor[unit];
+    return {
+    	y_unit: unit,
+	    yfunc: function(val){return val * f;}, //NEED TO FIGURE OUT WHAT THESE DO.
+	};
+};
+
+function updateBinSize(){
+	var binSize = $('#binFactor').val() * 0.05; //In Angstroms
+	var currentUnits = $('#bin_units').html();
+	var factor = {'Å': 1, 'nm': 0.1, 'micron': 1e-4, 'mm': 1e-7, 'cm': 1e-8, 'm':1e-10};
+
+	binSize = binSize * factor[currentUnits];
+
+	$('#binSize').html(binSize);
+
+};
+
+
 
 function convertunit(){
     var unit = $('#xunit').val()
@@ -60,7 +109,7 @@ function Spectrum(rawdata){
     this.err_in = [];
     this.x_unit_in = 'Å';
     this.x_type_in = 'wavelength';
-    this.y_type_in = 'counts / s';
+    this.y_type_in = 'counts / s / Å';
 
     var i, row;
     for (i = 0; i < rawdata.length; i++) {
@@ -87,16 +136,17 @@ function Spectrum(rawdata){
     this.y_type = this.y_type_in;
 
     this.xlabel = function() {return this.x_type + "[" + this.x_unit + "]"};
-    this.ylabel = function() {return this.y_type + " / " + this.x_unit};
+    this.ylabel = function() {return this.y_type};
 
     this.convert_to_xunit = function(){
 	var converter = convertunit()
 	this.x_type = converter.x_type;
 	this.x_unit = converter.x_unit;
+	this.update_ylabel_scale();
 	switch (converter.x_type) {
 	case "wavelength":
 	    this.x = this.x_lo_in.map(converter.xfunc);
-	    this.y = this.y_in.map(converter.yfunc);
+	    //this.y = this.y_in.map(converter.yfunc); // I"M NOT SURE WHY THIS COMMAND USED TO BE HERE,
 	    // Prevent end of plot from hanging in air
 	    this.x.push(converter.xfunc(this.x_hi_in[-1]));
 	    this.y.push(0);
@@ -117,6 +167,35 @@ function Spectrum(rawdata){
 	this.x_mid = this.x_mid_in.map(converter.xfunc);
 	this.err = this.err_in.map(converter.yfunc);
     };
+
+    this.update_ylabel_scale = function(){
+    	var xunit = $("#xunit").val();
+    	var yunit = $("#yunit").val();
+    	switch(yunit){
+    		case 'counts/X/s':
+    			this.y_type = 'counts / s / ' + xunit;
+    	};
+    };
+
+    this.convert_to_yunit = function(){
+    	var converter = convertyunit()
+    	this.y = this.y_in.map(converter.yfunc);
+    	this.y.push(0);
+    	switch(converter.y_unit){
+    		case 'counts/X/s':
+    			this.y_type = 'counts / s / ' + this.x_unit;
+    			break;
+    		case 'counts/bin':
+    			this.y_type = 'counts / bin'
+    			break;
+    		default:
+    			this.y_type = 'default';
+    			break;
+    	};
+
+
+    };
+
 };
 
 function LineSpec(spec) {
@@ -255,6 +334,22 @@ $(document).ready(function(){
 	    plotarea.layout.xaxis.title = spec1.xlabel();
 	    plotarea.layout.yaxis.title = spec1.ylabel();
 	    Plotly.redraw(plotarea);
+
+	    convertBinUnit();
+	});
+	$('#yunit').change(function(){
+		hlike.update();
+		spec1.convert_to_yunit();
+		plotarea.data[0].x = hlike.x;
+	    plotarea.data[1].x = spec1.x;
+	    plotarea.data[1].y = spec1.y;
+	    plotarea.data[2].x = spec1.x_mid;
+	    plotarea.data[2].y = spec1.y;
+	    plotarea.data[2].error_y.array = spec1.err;
+	    plotarea.layout.xaxis.title = spec1.xlabel();
+	    plotarea.layout.yaxis.title = spec1.ylabel();
+	    Plotly.redraw(plotarea);
+
 	});
 	$('#redshift').change(function(){
 	    this.val(parseFloat(this.val()));
@@ -262,5 +357,12 @@ $(document).ready(function(){
 	    plotarea.data[0].x = hlike.x;
 	    Plotly.redraw(plotarea);
 	});
+	$('#binSize').change(function(){
+		binSize = this.val();
+	});
+
+	document.getElementById("binFactor").onblur = function(){
+		updateBinSize();
+	};
     });
 });
